@@ -8,3 +8,6 @@ pymongo
 pydantic
 pydantic-settings
 python-socketio[asgi]
+requests
+streamlit
+pillow
