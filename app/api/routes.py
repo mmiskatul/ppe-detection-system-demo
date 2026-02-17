@@ -1,95 +1,110 @@
-import asyncio
 import tempfile
-import time
-import uuid
 from pathlib import Path
-from typing import List
 
+import cv2
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from ..core.config import settings
-from ..core.model import resolve_model_path
-from ..schemas import (
-    HealthResponse,
-    ImageDetectionResponse,
+from app.core.colors import get_class_colors
+from app.core.model import get_model_class_map, get_model_class_names
+from app.schemas import (
+    ClassInfo,
+    ClassesResponse,
+    DetectionResponse,
     VideoDetectionResponse,
-    VideoFrameDetection,
+    VideoFrameDetections,
 )
-from ..services.detection import detect_on_image, load_image_from_upload, save_detection
-from ..services.video import detect_on_video
+from app.services.detection import decode_image_bytes, run_detection
 
 router = APIRouter()
 
 
-@router.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
-    return HealthResponse(status="ok", model=str(resolve_model_path(settings)))
+@router.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
 
 
-@router.post("/detect/image", response_model=ImageDetectionResponse)
+@router.get("/classes", response_model=ClassesResponse)
+async def classes() -> ClassesResponse:
+    class_map = get_model_class_map()
+    color_map = get_class_colors()
+    all_classes = [
+        ClassInfo(class_id=class_id, class_name=class_name, color=color_map[class_name])
+        for class_id, class_name in class_map.items()
+    ]
+    return ClassesResponse(classes=all_classes)
+
+
+@router.post("/detect/image", response_model=DetectionResponse)
 async def detect_image(
     file: UploadFile = File(...),
-    conf: float = settings.yolo_conf,
-    iou: float = settings.yolo_iou,
-) -> ImageDetectionResponse:
-    request_id = str(uuid.uuid4())
-    image = load_image_from_upload(file)
-    detections = await asyncio.to_thread(detect_on_image, image, conf, iou)
-
-    payload = {
-        "request_id": request_id,
-        "type": "image",
-        "model": str(resolve_model_path(settings)),
-        "created_at": time.time(),
-        "detections": [d.model_dump() for d in detections],
-    }
-    saved = await asyncio.to_thread(save_detection, payload)
-
-    return ImageDetectionResponse(
-        request_id=request_id,
-        model=str(resolve_model_path(settings)),
+    conf: float = 0.25,
+    iou: float = 0.45,
+) -> DetectionResponse:
+    image_bytes = await file.read()
+    image = decode_image_bytes(image_bytes)
+    detections, counts = run_detection(image, conf=conf, iou=iou)
+    h, w = image.shape[:2]
+    return DetectionResponse(
+        image_width=w,
+        image_height=h,
         detections=detections,
-        saved=saved,
+        counts=counts,
     )
 
 
 @router.post("/detect/video", response_model=VideoDetectionResponse)
 async def detect_video(
     file: UploadFile = File(...),
-    conf: float = settings.yolo_conf,
-    iou: float = settings.yolo_iou,
+    conf: float = 0.25,
+    iou: float = 0.45,
+    frame_stride: int = 5,
+    max_frames: int = 120,
 ) -> VideoDetectionResponse:
-    request_id = str(uuid.uuid4())
-    suffix = Path(file.filename or "video").suffix
+    suffix = Path(file.filename or "upload.mp4").suffix or ".mp4"
+    class_names = get_model_class_names()
+    totals = {name: 0 for name in class_names}
+    frames: list[VideoFrameDetections] = []
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(file.file.read())
-        temp_path = tmp.name
+        tmp_path = Path(tmp.name)
+        tmp.write(await file.read())
+
+    cap = cv2.VideoCapture(str(tmp_path))
+    if not cap.isOpened():
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Invalid video file")
 
     try:
-        frames: List[VideoFrameDetection] = await asyncio.to_thread(
-            detect_on_video, temp_path, conf, iou, settings.max_frames
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        try:
-            Path(temp_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        frame_index = 0
+        processed_frames = 0
+        safe_stride = max(1, frame_stride)
+        safe_max = max(1, max_frames)
 
-    payload = {
-        "request_id": request_id,
-        "type": "video",
-        "model": str(resolve_model_path(settings)),
-        "created_at": time.time(),
-        "frames": [f.model_dump() for f in frames],
-    }
-    saved = await asyncio.to_thread(save_detection, payload)
+        while processed_frames < safe_max:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if frame_index % safe_stride == 0:
+                detections, counts = run_detection(frame, conf=conf, iou=iou)
+                for class_name, count in counts.items():
+                    totals[class_name] = totals.get(class_name, 0) + count
+                frames.append(
+                    VideoFrameDetections(
+                        frame_index=frame_index,
+                        detections=detections,
+                        counts=counts,
+                    )
+                )
+                processed_frames += 1
+            frame_index += 1
+    finally:
+        cap.release()
+        tmp_path.unlink(missing_ok=True)
 
     return VideoDetectionResponse(
-        request_id=request_id,
-        model=str(resolve_model_path(settings)),
+        total_frames=total_frames,
+        processed_frames=processed_frames,
         frames=frames,
-        saved=saved,
+        totals=totals,
     )

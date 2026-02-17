@@ -1,6 +1,6 @@
-from typing import List
+from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BBox(BaseModel):
@@ -10,32 +10,54 @@ class BBox(BaseModel):
     y2: float
 
 
-class DetectionItem(BaseModel):
-    class_name: str
+class Detection(BaseModel):
     class_id: int
+    class_name: str
     confidence: float
+    color: str
     bbox: BBox
 
 
-class ImageDetectionResponse(BaseModel):
-    request_id: str
-    model: str
-    detections: List[DetectionItem]
-    saved: bool = False
+class ClassInfo(BaseModel):
+    class_id: int
+    class_name: str
+    color: str
 
 
-class VideoFrameDetection(BaseModel):
+class ClassesResponse(BaseModel):
+    classes: List[ClassInfo]
+
+
+class DetectionResponse(BaseModel):
+    image_width: int
+    image_height: int
+    detections: List[Detection]
+    counts: Dict[str, int]
+
+
+class VideoFrameDetections(BaseModel):
     frame_index: int
-    detections: List[DetectionItem]
+    detections: List[Detection]
+    counts: Dict[str, int]
 
 
 class VideoDetectionResponse(BaseModel):
-    request_id: str
-    model: str
-    frames: List[VideoFrameDetection]
-    saved: bool = False
+    total_frames: int
+    processed_frames: int
+    frames: List[VideoFrameDetections]
+    totals: Dict[str, int]
 
 
-class HealthResponse(BaseModel):
-    status: str
-    model: str
+class WsFrameRequest(BaseModel):
+    type: Literal["frame"] = "frame"
+    image: str = Field(..., description="Base64 image string (optional data URL prefix)")
+    conf: Optional[float] = None
+    iou: Optional[float] = None
+
+
+class WsDetectionResponse(BaseModel):
+    type: Literal["detections"] = "detections"
+    image_width: int
+    image_height: int
+    detections: List[Detection]
+    counts: Dict[str, int]

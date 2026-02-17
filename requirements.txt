@@ -11,3 +11,4 @@ python-socketio[asgi]
 requests
 streamlit
 pillow
+streamlit-webrtc

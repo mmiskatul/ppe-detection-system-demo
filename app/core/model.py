@@ -1,17 +1,37 @@
 from functools import lru_cache
+from threading import Lock
+from typing import Dict, List
 
 from ultralytics import YOLO
 
-from .config import Settings, resolve_model_path, settings
+from app.core.config import get_settings
+
+_predict_lock = Lock()
 
 
 @lru_cache
 def get_model() -> YOLO:
-    model_path = resolve_model_path(settings)
-    if not model_path.exists():
-        raise RuntimeError(f"Model not found at {model_path}")
-    return YOLO(str(model_path))
+    settings = get_settings()
+    return YOLO(settings.yolo_model_path)
 
 
-def get_model_path(settings_obj: Settings) -> str:
-    return str(resolve_model_path(settings_obj))
+def get_model_class_names() -> List[str]:
+    model = get_model()
+    names = model.names
+    if isinstance(names, dict):
+        return [names[idx] for idx in sorted(names)]
+    return list(names)
+
+
+def model_predict(image_bgr, conf: float, iou: float):
+    model = get_model()
+    with _predict_lock:
+        return model.predict(image_bgr, conf=conf, iou=iou, verbose=False)[0]
+
+
+def get_model_class_map() -> Dict[int, str]:
+    model = get_model()
+    names = model.names
+    if isinstance(names, dict):
+        return dict(sorted(names.items()))
+    return {idx: name for idx, name in enumerate(names)}

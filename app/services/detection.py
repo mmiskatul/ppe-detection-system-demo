@@ -1,67 +1,64 @@
-from typing import List
+import base64
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException
 
-from ..core.config import settings
-from ..core.database import get_collection
-from ..core.model import get_model
-from ..schemas import BBox, DetectionItem
+from app.core.colors import get_class_colors
+from app.core.model import get_model_class_map, get_model_class_names, model_predict
+from app.schemas import BBox, Detection
 
 
-def load_image_from_upload(file: UploadFile) -> np.ndarray:
-    content = file.file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
-    data = np.frombuffer(content, dtype=np.uint8)
-    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+def decode_image_bytes(image_bytes: bytes) -> np.ndarray:
+    np_arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     if image is None:
-        raise HTTPException(status_code=400, detail="Unsupported image format")
+        raise HTTPException(status_code=400, detail="Invalid image file")
     return image
 
 
-def parse_detections(result) -> List[DetectionItem]:
-    detections: List[DetectionItem] = []
-    names = result.names or {}
+def decode_base64_image(encoded: str) -> np.ndarray:
+    try:
+        if "," in encoded:
+            encoded = encoded.split(",", 1)[1]
+        image_bytes = base64.b64decode(encoded)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Invalid base64 image payload") from exc
+    return decode_image_bytes(image_bytes)
+
+
+def run_detection(image_bgr: np.ndarray, conf: float, iou: float) -> Tuple[List[Detection], Dict[str, int]]:
+    class_map = get_model_class_map()
+    class_names = get_model_class_names()
+    color_map = get_class_colors()
+
+    counts: Dict[str, int] = {name: 0 for name in class_names}
+    result = model_predict(image_bgr, conf=conf, iou=iou)
+
+    detections: List[Detection] = []
     boxes = result.boxes
     if boxes is None:
-        return detections
+        return detections, counts
 
-    allowed = set(settings.allowed_classes)
-    xyxy = boxes.xyxy.cpu().tolist()
-    conf = boxes.conf.cpu().tolist()
-    cls = boxes.cls.cpu().tolist()
+    for box in boxes:
+        cls_id = int(box.cls.item())
+        class_name = class_map.get(cls_id, f"class_{cls_id}")
+        confidence = float(box.conf.item())
+        x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
 
-    for box, score, class_id in zip(xyxy, conf, cls):
-        class_name = str(names.get(int(class_id), int(class_id)))
-        if class_name not in allowed:
-            continue
+        if class_name not in counts:
+            counts[class_name] = 0
+        counts[class_name] += 1
+
         detections.append(
-            DetectionItem(
+            Detection(
+                class_id=cls_id,
                 class_name=class_name,
-                class_id=int(class_id),
-                confidence=float(score),
-                bbox=BBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3]),
+                confidence=confidence,
+                color=color_map.get(class_name, "#00ff00"),
+                bbox=BBox(x1=x1, y1=y1, x2=x2, y2=y2),
             )
         )
-    return detections
 
-
-def detect_on_image(image: np.ndarray, conf: float, iou: float) -> List[DetectionItem]:
-    model = get_model()
-    results = model.predict(source=image, conf=conf, iou=iou, verbose=False)
-    if not results:
-        return []
-    return parse_detections(results[0])
-
-
-def save_detection(payload: dict) -> bool:
-    collection = get_collection()
-    if collection is None:
-        return False
-    try:
-        collection.insert_one(payload)
-        return True
-    except Exception:
-        return False
+    return detections, counts
