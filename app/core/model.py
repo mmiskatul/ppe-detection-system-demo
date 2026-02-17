@@ -23,10 +23,13 @@ def get_model_class_names() -> List[str]:
     return list(names)
 
 
-def model_predict(image_bgr, conf: float, iou: float):
+def model_predict(image_bgr, conf: float, iou: float, imgsz: int | None = None):
     model = get_model()
+    kwargs = {"conf": conf, "iou": iou, "verbose": False}
+    if imgsz:
+        kwargs["imgsz"] = imgsz
     with _predict_lock:
-        return model.predict(image_bgr, conf=conf, iou=iou, verbose=False)[0]
+        return model.predict(image_bgr, **kwargs)[0]
 
 
 def get_model_class_map() -> Dict[int, str]:

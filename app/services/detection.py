@@ -6,6 +6,7 @@ import numpy as np
 from fastapi import HTTPException
 
 from app.core.colors import get_class_colors
+from app.core.config import get_settings
 from app.core.model import get_model_class_map, get_model_class_names, model_predict
 from app.schemas import BBox, Detection
 
@@ -29,12 +30,13 @@ def decode_base64_image(encoded: str) -> np.ndarray:
 
 
 def run_detection(image_bgr: np.ndarray, conf: float, iou: float) -> Tuple[List[Detection], Dict[str, int]]:
+    settings = get_settings()
     class_map = get_model_class_map()
     class_names = get_model_class_names()
     color_map = get_class_colors()
 
     counts: Dict[str, int] = {name: 0 for name in class_names}
-    result = model_predict(image_bgr, conf=conf, iou=iou)
+    result = model_predict(image_bgr, conf=conf, iou=iou, imgsz=settings.yolo_imgsz)
 
     detections: List[Detection] = []
     boxes = result.boxes

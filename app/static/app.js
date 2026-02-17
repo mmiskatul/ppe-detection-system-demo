@@ -23,6 +23,11 @@ const iouValue = document.getElementById("iou-value");
 const legendEl = document.getElementById("legend");
 
 const overlayCtx = overlay.getContext("2d");
+const captureCanvas = document.createElement("canvas");
+const captureCtx = captureCanvas.getContext("2d", { alpha: false, desynchronized: true });
+const FRAME_INTERVAL_MS = 90;
+const MAX_CAPTURE_WIDTH = 640;
+const JPEG_QUALITY = 0.6;
 let ws = null;
 let sio = null;
 let classes = [];
@@ -32,6 +37,7 @@ let sending = false;
 let imageObj = null;
 let latestRealtimeDetections = [];
 let latestRealtimeSize = { w: 0, h: 0 };
+let inFlight = false;
 
 function updateSliderText() {
   confValue.textContent = Number(confInput.value).toFixed(2);
@@ -165,9 +171,11 @@ function connectWs() {
   ws.onclose = () => {
     statusEl.textContent = "Status: disconnected (WebSocket)";
     sending = false;
+    inFlight = false;
   };
   ws.onerror = () => {
     statusEl.textContent = "Status: error (WebSocket)";
+    inFlight = false;
   };
   ws.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -178,6 +186,7 @@ function connectWs() {
       h: payload.image_height || video.videoHeight || 0,
     };
     updateChart(payload.counts);
+    inFlight = false;
   };
 }
 
@@ -194,9 +203,11 @@ function connectSocketIo() {
   sio.on("disconnect", () => {
     statusEl.textContent = "Status: disconnected (Socket.IO)";
     sending = false;
+    inFlight = false;
   });
   sio.on("error", (payload) => {
     statusEl.textContent = `Status: error (Socket.IO) ${JSON.stringify(payload)}`;
+    inFlight = false;
   });
   sio.on("detections", (payload) => {
     latestRealtimeDetections = payload.detections || [];
@@ -205,6 +216,7 @@ function connectSocketIo() {
       h: payload.image_height || video.videoHeight || 0,
     };
     updateChart(payload.counts || {});
+    inFlight = false;
   });
 }
 
@@ -301,18 +313,25 @@ detectVideoBtn.addEventListener("click", async () => {
 
 function sendFramesLoop() {
   if (!sending) return;
+  if (inFlight) {
+    setTimeout(sendFramesLoop, FRAME_INTERVAL_MS);
+    return;
+  }
   if (video.videoWidth && video.videoHeight) {
     if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
       overlay.width = video.videoWidth;
       overlay.height = video.videoHeight;
     }
 
-    const temp = document.createElement("canvas");
-    temp.width = video.videoWidth;
-    temp.height = video.videoHeight;
-    const tempCtx = temp.getContext("2d");
-    tempCtx.drawImage(video, 0, 0);
-    const image = temp.toDataURL("image/jpeg", 0.7);
+    const scale = Math.min(1, MAX_CAPTURE_WIDTH / video.videoWidth);
+    const targetW = Math.max(1, Math.floor(video.videoWidth * scale));
+    const targetH = Math.max(1, Math.floor(video.videoHeight * scale));
+    if (captureCanvas.width !== targetW || captureCanvas.height !== targetH) {
+      captureCanvas.width = targetW;
+      captureCanvas.height = targetH;
+    }
+    captureCtx.drawImage(video, 0, 0, targetW, targetH);
+    const image = captureCanvas.toDataURL("image/jpeg", JPEG_QUALITY);
     const payload = {
       type: "frame",
       image,
@@ -321,11 +340,13 @@ function sendFramesLoop() {
     };
     if (transportSelect.value === "websocket" && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(payload));
+      inFlight = true;
     } else if (transportSelect.value === "socketio" && sio && sio.connected) {
       sio.emit("frame", payload);
+      inFlight = true;
     }
   }
-  setTimeout(sendFramesLoop, 250);
+  setTimeout(sendFramesLoop, FRAME_INTERVAL_MS);
 }
 
 async function startCamera() {

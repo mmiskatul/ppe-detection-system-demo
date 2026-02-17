@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     yolo_model_path: str = "best.pt"
     yolo_conf: float = 0.25
     yolo_iou: float = 0.45
+    yolo_imgsz: int = 640
     ws_frame_interval_ms: int = 250
 
 
