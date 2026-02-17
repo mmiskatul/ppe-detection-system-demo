@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+ultralytics
+opencv-python
+numpy
+python-multipart
+pymongo
+pydantic
+pydantic-settings
+python-socketio[asgi]
