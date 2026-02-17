@@ -67,10 +67,15 @@
           <span id="iou-value">0.45</span>
         </div>
         <button id="start-btn">Start Camera</button>
+        <button id="capture-btn">Capture Frame</button>
         <div class="video-panel">
           <div id="live-badge" class="live-badge">LIVE SCAN ACTIVE</div>
           <video id="video-live" autoplay muted playsinline></video>
           <canvas id="overlay-live"></canvas>
+        </div>
+        <div class="capture-panel">
+          <h3>Captured Reference Frame</h3>
+          <canvas id="captured-frame"></canvas>
         </div>
       </section>
 

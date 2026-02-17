@@ -168,6 +168,18 @@ canvas {
   background: #f8fafc;
 }
 
+#captured-frame {
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.capture-panel {
+  margin-top: 12px;
+}
+
 #video-summary {
   max-height: 220px;
   overflow: auto;
