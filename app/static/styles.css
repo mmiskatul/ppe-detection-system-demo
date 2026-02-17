@@ -189,12 +189,12 @@ canvas {
   background: #f8fafc;
 }
 
-.legend {
+/* .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
   margin-top: 12px;
-}
+} */
 
 .legend-item {
   display: flex;

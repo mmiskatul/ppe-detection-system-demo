@@ -22,7 +22,7 @@ const confInput = document.getElementById("conf");
 const iouInput = document.getElementById("iou");
 const confValue = document.getElementById("conf-value");
 const iouValue = document.getElementById("iou-value");
-const legendEl = document.getElementById("legend");
+// const legendEl = document.getElementById("legend");
 
 const overlayCtx = overlay.getContext("2d");
 const captureCanvas = document.createElement("canvas");
@@ -77,36 +77,36 @@ function renderLegend() {
   });
 }
 
-function initChart() {
-  const ctx = document.getElementById("classChart");
-  chart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: classes.map((c) => c.class_name),
-      datasets: [
-        {
-          label: "Live Count",
-          data: classes.map(() => 0),
-          backgroundColor: classes.map((c) => c.color),
-          borderWidth: 0,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      animation: false,
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { stepSize: 1 },
-        },
-      },
-      plugins: {
-        legend: { display: false },
-      },
-    },
-  });
-}
+// function initChart() {
+//   const ctx = document.getElementById("classChart");
+//   chart = new Chart(ctx, {
+//     type: "bar",
+//     data: {
+//       labels: classes.map((c) => c.class_name),
+//       datasets: [
+//         {
+//           label: "Live Count",
+//           data: classes.map(() => 0),
+//           backgroundColor: classes.map((c) => c.color),
+//           borderWidth: 0,
+//         },
+//       ],
+//     },
+//     options: {
+//       responsive: true,
+//       animation: false,
+//       scales: {
+//         y: {
+//           beginAtZero: true,
+//           ticks: { stepSize: 1 },
+//         },
+//       },
+//       plugins: {
+//         legend: { display: false },
+//       },
+//     },
+//   });
+// }
 
 function updateChart(counts) {
   if (!chart) return;
