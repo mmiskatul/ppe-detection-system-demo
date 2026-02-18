@@ -13,8 +13,6 @@ venv/
 ENV/
 
 # Env files
-.env
-.env.*
 
 # Logs
 *.log
@@ -24,7 +22,6 @@ ENV/
 Thumbs.db
 
 # IDE
-.vscode/
 .idea/
 
 # Jupyter
@@ -39,3 +36,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.swp
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
+config.bat
+node_modules
