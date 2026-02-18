@@ -15,7 +15,7 @@ from app.schemas import (
     VideoDetectionResponse,
     VideoFrameDetections,
 )
-from app.services.detection import annotate_detections, decode_image_bytes, run_detection
+from app.services.detection import annotate_detections, decode_image_bytes, run_detection, smooth_detections
 
 router = APIRouter()
 
@@ -28,6 +28,8 @@ def _render_annotated_video(
     frame_stride: int,
     max_frames: int | None,
     include_frames: bool,
+    smooth: bool,
+    smooth_alpha: float,
 ) -> tuple[Path, int, int, int, float, int, dict[str, int], list[VideoFrameDetections]]:
     class_names = get_model_class_names()
     totals = {name: 0 for name in class_names}
@@ -60,8 +62,9 @@ def _render_annotated_video(
 
         frame_index = 0
         processed_frames = 0
-        safe_stride = max(1, frame_stride)
+        safe_stride = 1 if smooth else max(1, frame_stride)
         safe_max = max_frames if max_frames is None else max(1, max_frames)
+        previous_detections: list = []
 
         try:
             while True:
@@ -74,6 +77,13 @@ def _render_annotated_video(
                 frame_to_write = frame
                 if frame_index % safe_stride == 0:
                     detections, counts = run_detection(frame, conf=conf, iou=iou)
+                    if smooth:
+                        detections = smooth_detections(
+                            previous_detections,
+                            detections,
+                            alpha=smooth_alpha,
+                        )
+                    previous_detections = detections
                     frame_to_write = annotate_detections(frame, detections)
                     for class_name, count in counts.items():
                         totals[class_name] = totals.get(class_name, 0) + count
@@ -86,6 +96,8 @@ def _render_annotated_video(
                             )
                         )
                     processed_frames += 1
+                elif previous_detections:
+                    frame_to_write = annotate_detections(frame, previous_detections)
                 writer.write(frame_to_write)
                 frame_index += 1
         finally:
@@ -138,6 +150,8 @@ async def detect_video(
     frame_stride: int = 1,
     max_frames: int | None = None,
     include_frames: bool = False,
+    smooth: bool = True,
+    smooth_alpha: float = 0.65,
 ) -> VideoDetectionResponse:
     suffix = Path(file.filename or "upload.mp4").suffix or ".mp4"
 
@@ -162,6 +176,8 @@ async def detect_video(
             frame_stride=frame_stride,
             max_frames=max_frames,
             include_frames=include_frames,
+            smooth=smooth,
+            smooth_alpha=smooth_alpha,
         )
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -185,6 +201,8 @@ async def detect_video_file(
     iou: float = 0.45,
     frame_stride: int = 1,
     max_frames: int | None = None,
+    smooth: bool = True,
+    smooth_alpha: float = 0.65,
 ) -> FileResponse:
     suffix = Path(file.filename or "upload.mp4").suffix or ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -208,6 +226,8 @@ async def detect_video_file(
             frame_stride=frame_stride,
             max_frames=max_frames,
             include_frames=False,
+            smooth=smooth,
+            smooth_alpha=smooth_alpha,
         )
     finally:
         tmp_path.unlink(missing_ok=True)

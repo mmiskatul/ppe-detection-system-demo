@@ -107,3 +107,66 @@ def annotate_detections(image_bgr: np.ndarray, detections: List[Detection]) -> n
             lineType=cv2.LINE_AA,
         )
     return annotated
+
+
+def _bbox_iou(a: BBox, b: BBox) -> float:
+    x_left = max(a.x1, b.x1)
+    y_top = max(a.y1, b.y1)
+    x_right = min(a.x2, b.x2)
+    y_bottom = min(a.y2, b.y2)
+    if x_right <= x_left or y_bottom <= y_top:
+        return 0.0
+    inter = (x_right - x_left) * (y_bottom - y_top)
+    area_a = max(0.0, (a.x2 - a.x1)) * max(0.0, (a.y2 - a.y1))
+    area_b = max(0.0, (b.x2 - b.x1)) * max(0.0, (b.y2 - b.y1))
+    union = area_a + area_b - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+
+def smooth_detections(
+    previous: List[Detection],
+    current: List[Detection],
+    *,
+    alpha: float = 0.65,
+    iou_threshold: float = 0.25,
+) -> List[Detection]:
+    if not previous:
+        return current
+
+    alpha = max(0.0, min(1.0, alpha))
+    used_prev: set[int] = set()
+    smoothed: List[Detection] = []
+
+    for cur in current:
+        best_idx = -1
+        best_iou = 0.0
+        for idx, prev in enumerate(previous):
+            if idx in used_prev or prev.class_id != cur.class_id:
+                continue
+            iou_val = _bbox_iou(prev.bbox, cur.bbox)
+            if iou_val > best_iou:
+                best_iou = iou_val
+                best_idx = idx
+
+        if best_idx >= 0 and best_iou >= iou_threshold:
+            prev = previous[best_idx]
+            used_prev.add(best_idx)
+            smoothed.append(
+                Detection(
+                    class_id=cur.class_id,
+                    class_name=cur.class_name,
+                    confidence=float(alpha * cur.confidence + (1.0 - alpha) * prev.confidence),
+                    color=cur.color,
+                    bbox=BBox(
+                        x1=float(alpha * cur.bbox.x1 + (1.0 - alpha) * prev.bbox.x1),
+                        y1=float(alpha * cur.bbox.y1 + (1.0 - alpha) * prev.bbox.y1),
+                        x2=float(alpha * cur.bbox.x2 + (1.0 - alpha) * prev.bbox.x2),
+                        y2=float(alpha * cur.bbox.y2 + (1.0 - alpha) * prev.bbox.y2),
+                    ),
+                )
+            )
+        else:
+            smoothed.append(cur)
+    return smoothed

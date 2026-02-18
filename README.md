@@ -44,3 +44,6 @@ Open: `http://localhost:8080`
 - `YOLO_CONF` (default: `0.25`)
 - `YOLO_IOU` (default: `0.45`)
 - `WS_FRAME_INTERVAL_MS` (default: `250`)
+Video smoothing query params:
+- `smooth` (default `true`): enable temporal smoothing for stable boxes
+- `smooth_alpha` (default `0.65`): higher = follow current frame more, lower = smoother/stabler

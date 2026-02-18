@@ -401,7 +401,7 @@ detectVideoBtn.addEventListener("click", async () => {
   const form = new FormData();
   form.append("file", file);
 
-  const resp = await fetch(`/detect/video?conf=${Number(confInput.value)}&iou=${Number(iouInput.value)}&frame_stride=1`, {
+  const resp = await fetch(`/detect/video?conf=${Number(confInput.value)}&iou=${Number(iouInput.value)}&frame_stride=1&smooth=true&smooth_alpha=0.65`, {
     method: "POST",
     body: form,
   });
