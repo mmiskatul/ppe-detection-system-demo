@@ -64,3 +64,46 @@ def run_detection(image_bgr: np.ndarray, conf: float, iou: float) -> Tuple[List[
         )
 
     return detections, counts
+
+
+def _hex_to_bgr(color_hex: str) -> tuple[int, int, int]:
+    raw = color_hex.lstrip("#")
+    if len(raw) != 6:
+        return (0, 255, 0)
+    r = int(raw[0:2], 16)
+    g = int(raw[2:4], 16)
+    b = int(raw[4:6], 16)
+    return (b, g, r)
+
+
+def annotate_detections(image_bgr: np.ndarray, detections: List[Detection]) -> np.ndarray:
+    annotated = image_bgr.copy()
+    for det in detections:
+        x1 = int(round(det.bbox.x1))
+        y1 = int(round(det.bbox.y1))
+        x2 = int(round(det.bbox.x2))
+        y2 = int(round(det.bbox.y2))
+        color = _hex_to_bgr(det.color)
+        label = f"{det.class_name} {det.confidence:.2f}"
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+        text_y = max(y1 - 6, text_h + 6)
+        cv2.rectangle(
+            annotated,
+            (x1, text_y - text_h - baseline - 6),
+            (x1 + text_w + 8, text_y + baseline - 4),
+            color,
+            thickness=-1,
+        )
+        cv2.putText(
+            annotated,
+            label,
+            (x1 + 4, text_y - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            2,
+            lineType=cv2.LINE_AA,
+        )
+    return annotated

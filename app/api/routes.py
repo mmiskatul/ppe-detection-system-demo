@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import cv2
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -13,7 +14,7 @@ from app.schemas import (
     VideoDetectionResponse,
     VideoFrameDetections,
 )
-from app.services.detection import decode_image_bytes, run_detection
+from app.services.detection import annotate_detections, decode_image_bytes, run_detection
 
 router = APIRouter()
 
@@ -57,8 +58,9 @@ async def detect_video(
     file: UploadFile = File(...),
     conf: float = 0.25,
     iou: float = 0.45,
-    frame_stride: int = 5,
-    max_frames: int = 120,
+    frame_stride: int = 1,
+    max_frames: int | None = None,
+    include_frames: bool = False,
 ) -> VideoDetectionResponse:
     suffix = Path(file.filename or "upload.mp4").suffix or ".mp4"
     class_names = get_model_class_names()
@@ -76,28 +78,56 @@ async def detect_video(
 
     try:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        video_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        safe_fps = video_fps if video_fps > 0 else 25.0
+
+        output_dir = Path("app/static/outputs")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_name = f"annotated_{uuid4().hex}.mp4"
+        output_path = output_dir / output_name
+        writer = cv2.VideoWriter(
+            str(output_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            safe_fps,
+            (video_width, video_height),
+        )
+        if not writer.isOpened():
+            raise HTTPException(status_code=500, detail="Unable to initialize annotated video writer")
+
         frame_index = 0
         processed_frames = 0
         safe_stride = max(1, frame_stride)
-        safe_max = max(1, max_frames)
+        safe_max = max_frames if max_frames is None else max(1, max_frames)
 
-        while processed_frames < safe_max:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            if frame_index % safe_stride == 0:
-                detections, counts = run_detection(frame, conf=conf, iou=iou)
-                for class_name, count in counts.items():
-                    totals[class_name] = totals.get(class_name, 0) + count
-                frames.append(
-                    VideoFrameDetections(
-                        frame_index=frame_index,
-                        detections=detections,
-                        counts=counts,
-                    )
-                )
-                processed_frames += 1
-            frame_index += 1
+        try:
+            while True:
+                if safe_max is not None and processed_frames >= safe_max:
+                    break
+                ok, frame = cap.read()
+                if not ok:
+                    break
+
+                frame_to_write = frame
+                if frame_index % safe_stride == 0:
+                    detections, counts = run_detection(frame, conf=conf, iou=iou)
+                    frame_to_write = annotate_detections(frame, detections)
+                    for class_name, count in counts.items():
+                        totals[class_name] = totals.get(class_name, 0) + count
+                    if include_frames:
+                        frames.append(
+                            VideoFrameDetections(
+                                frame_index=frame_index,
+                                detections=detections,
+                                counts=counts,
+                            )
+                        )
+                    processed_frames += 1
+                writer.write(frame_to_write)
+                frame_index += 1
+        finally:
+            writer.release()
     finally:
         cap.release()
         tmp_path.unlink(missing_ok=True)
@@ -105,6 +135,10 @@ async def detect_video(
     return VideoDetectionResponse(
         total_frames=total_frames,
         processed_frames=processed_frames,
+        video_width=video_width,
+        video_height=video_height,
+        video_fps=safe_fps,
+        annotated_video_url=f"/static/outputs/{output_name}",
         frames=frames,
         totals=totals,
     )

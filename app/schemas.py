@@ -44,6 +44,10 @@ class VideoFrameDetections(BaseModel):
 class VideoDetectionResponse(BaseModel):
     total_frames: int
     processed_frames: int
+    video_width: int
+    video_height: int
+    video_fps: float
+    annotated_video_url: Optional[str] = None
     frames: List[VideoFrameDetections]
     totals: Dict[str, int]
 
