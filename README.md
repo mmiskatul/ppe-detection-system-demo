@@ -19,6 +19,8 @@ Backend and frontend for realtime YOLO inference using `best.pt`.
 ## Features
 
 - `POST /detect/image` for image detection
+- `POST /detect/video` for video detection JSON + annotated video URL
+- `POST /detect/video/file` for direct annotated MP4 file response
 - `GET /classes` for all classes + standard fixed color map
 - `GET /health` for health checks
 - `WS /ws/live` for live detection over WebSocket

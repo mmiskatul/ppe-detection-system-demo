@@ -9,6 +9,8 @@ const imageAnnotated = document.getElementById("image-annotated");
 const videoFileInput = document.getElementById("video-file");
 const detectVideoBtn = document.getElementById("detect-video-btn");
 const videoPreview = document.getElementById("video-preview");
+const videoAnnotated = document.getElementById("video-annotated");
+const videoDownload = document.getElementById("video-download");
 const videoSummary = document.getElementById("video-summary");
 
 const video = document.getElementById("video-live");
@@ -22,7 +24,7 @@ const confInput = document.getElementById("conf");
 const iouInput = document.getElementById("iou");
 const confValue = document.getElementById("conf-value");
 const iouValue = document.getElementById("iou-value");
-// const legendEl = document.getElementById("legend");
+const legendEl = document.getElementById("legend");
 
 const overlayCtx = overlay.getContext("2d");
 const captureCanvas = document.createElement("canvas");
@@ -64,10 +66,10 @@ async function loadClasses() {
   const data = await resp.json();
   classes = data.classes;
   renderLegend();
-  initChart();
 }
 
 function renderLegend() {
+  if (!legendEl) return;
   legendEl.innerHTML = "";
   classes.forEach((c) => {
     const item = document.createElement("div");
@@ -231,7 +233,7 @@ function drawReferenceFrame(canvas, image, detections) {
   canvas.width = image.width;
   canvas.height = image.height;
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  drawReferenceOverlay(ctx, detections, 1, 1);
+  drawRealtimeDetections(ctx, detections, 1, 1);
 }
 
 function drawRealtimeDetections(ctx, detections, scaleX, scaleY) {
@@ -386,6 +388,9 @@ videoFileInput.addEventListener("change", () => {
   const file = videoFileInput.files && videoFileInput.files[0];
   if (!file) return;
   videoPreview.src = URL.createObjectURL(file);
+  videoAnnotated.removeAttribute("src");
+  videoDownload.hidden = true;
+  videoSummary.textContent = "";
 });
 
 detectVideoBtn.addEventListener("click", async () => {
@@ -396,12 +401,28 @@ detectVideoBtn.addEventListener("click", async () => {
   const form = new FormData();
   form.append("file", file);
 
-  const resp = await fetch(`/detect/video?conf=${Number(confInput.value)}&iou=${Number(iouInput.value)}&frame_stride=5&max_frames=120`, {
+  const resp = await fetch(`/detect/video?conf=${Number(confInput.value)}&iou=${Number(iouInput.value)}&frame_stride=1`, {
     method: "POST",
     body: form,
   });
   const data = await resp.json();
-  videoSummary.textContent = JSON.stringify(data, null, 2);
+  if (data.annotated_video_url) {
+    videoAnnotated.src = data.annotated_video_url;
+    videoDownload.href = data.annotated_video_url;
+    videoDownload.hidden = false;
+  }
+  videoSummary.textContent = JSON.stringify(
+    {
+      total_frames: data.total_frames,
+      processed_frames: data.processed_frames,
+      video_width: data.video_width,
+      video_height: data.video_height,
+      video_fps: data.video_fps,
+      totals: data.totals,
+    },
+    null,
+    2,
+  );
   updateChart(data.totals || {});
 });
 
